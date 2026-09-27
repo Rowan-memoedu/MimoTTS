@@ -48,7 +48,7 @@ def voices():
 
 
 def default_voice(text):
-    return "茉莉" if re.search(r"[\u3400-\u9fff]", text) else "Mia"
+    return "Mia"
 
 
 def split_text(text, limit=400):
@@ -226,6 +226,10 @@ def _write_wav(path, pcm):
 
 def transcode(source, destination, speed=1.0, volume=1.0):
     ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        installed = Path(r"D:\Applications\P47\FFmpeg\ffmpeg-8.1.2-full_build\bin\ffmpeg.exe")
+        if installed.is_file():
+            ffmpeg = str(installed)
     if not ffmpeg:
         raise MimoError("ffmpeg is required for MP3 or speed/volume conversion.")
     if not 0.5 <= speed <= 2.5 or not 0 <= volume <= 3:

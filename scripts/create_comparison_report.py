@@ -112,6 +112,7 @@ def render(directory, cases, models, created_at=None):
     section = f'<section class="case" id="production"><h2>正式切换进度</h2><p>已批准切换；基于当前源码合并，保留测试之后的更新。运行状态以本表为准。</p><table><thead><tr><th>入口</th><th>当前状态</th></tr></thead><tbody>{rows}</tbody></table><p><a href="../../production/20260927/deployment.md">迁移与验收记录</a> · <a href="../../production/20260927/status.json">正式状态 JSON</a></p></section>' if production else ""
     content = content.replace("{{PRODUCTION}}", section)
     if production:
+        content = content.replace("运行状态以本表为准。", "运行状态以本表为准。当前中英文默认音色统一为 Mia，取自下方第二组零碎知识剪藏的新录音；历史对照录音保留原始音色。")
         content = content.replace("正式版本保持现状；本页为独立测试产物。", "新旧录音保持原始对照；正式迁移状态见下表。").replace("正式软件尚未切换。", "此表为历史隔离包，不能直接用于正式安装。").replace("隔离测试版本", "历史隔离测试版本")
     (directory / "index.html").write_text(content, encoding="utf-8")
     return payload

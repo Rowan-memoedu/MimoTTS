@@ -17,6 +17,17 @@ from pathlib import Path
 from .client import ARTIFACTS, MimoError, VOICES, default_voice, synthesize
 
 PYTHON = Path(r"D:\AppData\MimoTTS\venv\Scripts\python.exe")
+FFMPEG_BIN = Path(r"D:\Applications\P47\FFmpeg\ffmpeg-8.1.2-full_build\bin")
+
+
+def runtime_environment():
+    # Desktop launchers may still carry an old PATH and embedded Python settings.
+    environment = dict(os.environ)
+    environment.pop("PYTHONHOME", None)
+    environment.pop("PYTHONPATH", None)
+    if FFMPEG_BIN.is_dir():
+        environment["PATH"] = str(FFMPEG_BIN) + os.pathsep + environment.get("PATH", "")
+    return environment
 
 
 def selected_voice(text, old_voice=""):
@@ -24,12 +35,6 @@ def selected_voice(text, old_voice=""):
         return old_voice
     if old_voice.startswith("mimo-") and old_voice[5:] in VOICES:
         return old_voice[5:]
-    english = old_voice.startswith(("en-", "en_"))
-    male = any(x in old_voice.lower() for x in ("guy", "ryan", "andrew", "brian", "yunxi", "yunjian"))
-    if english:
-        return "Dean" if male else "Mia"
-    if old_voice.startswith(("zh-", "zh_")):
-        return "白桦" if male else "茉莉"
     return default_voice(text)
 
 
@@ -140,7 +145,7 @@ class AnkiBackend:
         class RequestKey(str):
             def hash(self):
                 return str(self)
-        return RequestKey(hashlib.sha256(json.dumps({"schema": 1, "provider": "mimo-v2.5-tts", "text": self.spoken(job), "mode": job[1]}, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest())
+        return RequestKey(hashlib.sha256(json.dumps({"schema": 2, "provider": "mimo-v2.5-tts", "voice": "Mia", "text": self.spoken(job), "mode": job[1]}, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest())
 
     def cached(self, job):
         path = self.root / (self.key(job) + ".mp3")
@@ -151,10 +156,10 @@ class AnkiBackend:
         if existing:
             return existing
         target = self.root / (self.key(job) + ".mp3")
-        voice = "Mia" if job[1] == "english" else "茉莉"
+        voice = "Mia"
         # Anki's embedded Python does not need the package or networking dependencies.
-        command = [str(PYTHON), "-X", "utf8", "-m", "mimo_tts.cli", "--json", "synthesize", "--text-file", "-", "--voice", voice, "--out", str(target)]
-        result = subprocess.run(command, input=self.spoken(job), text=True, encoding="utf-8", capture_output=True, timeout=600, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        command = [str(PYTHON), "-I", "-X", "utf8", "-m", "mimo_tts.cli", "--json", "synthesize", "--text-file", "-", "--voice", voice, "--out", str(target)]
+        result = subprocess.run(command, input=self.spoken(job), text=True, encoding="utf-8", capture_output=True, timeout=600, env=runtime_environment(), creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         if result.returncode:
             raise RuntimeError("MiMo synthesis failed; check mimo-tts doctor")
         return str(target)

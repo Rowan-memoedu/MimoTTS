@@ -9,7 +9,7 @@ The shared implementation is `D:\Projects\MimoTTS`. Run `D:\AppData\MimoTTS\bin\
 
 Use `--json doctor` to check setup and `--json doctor --probe` when a live connection check is needed. Credentials present alone do not prove the API works.
 
-Default to `preset` for ordinary reading and quick reminders (Chinese 茉莉, English Mia). Use `design --style` for a described voice, and `clone --reference` for a user-authorized WAV/MP3 or a generated voice. Design/clone do not provide the same low-latency streaming behavior as preset. Free pricing was verified on 2026-09-27; recheck the official model page before making later cost claims.
+Default to `preset` and Mia for both Chinese and English, as selected from the Clipper comparison recording. Explicit voice selection remains available. Use `design --style` for a described voice, and `clone --reference` for a user-authorized WAV/MP3 or a generated voice. Design/clone do not provide the same low-latency streaming behavior as preset. Free pricing was verified on 2026-09-27; recheck the official model page before making later cost claims.
 
 ```powershell
 & 'D:\AppData\MimoTTS\bin\mimo-tts.cmd' --json synthesize --text '你好，这是语音测试。' --out 'D:\Artifacts\MimoTTS\hello.wav'

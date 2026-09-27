@@ -68,7 +68,7 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(AnkiBackend.spoken(("猫 cat", "bilingual")), "猫 cat")
         self.assertEqual(selected_voice("hello", "en-US-AriaNeural"), "Mia")
         self.assertEqual(selected_voice("hello", "mimo-Dean"), "Dean")
-        self.assertEqual(selected_voice("", "zh_female_vv_uranus_bigtts"), "茉莉")
+        self.assertEqual(selected_voice("", "zh_female_vv_uranus_bigtts"), "Mia")
 
 
 if __name__ == "__main__":
