@@ -47,7 +47,7 @@ def old_audio(case, output):
     if kind == "doubao":
         text_path = output.with_suffix(".txt")
         text_path.write_text(text, encoding="utf-8")
-        command([shutil.which("speech-kit"), "--json", "tts", "synthesize", "--text-file", text_path, "--out", output])
+        command([shutil.which("speech-kit"), "--json", "tts", "synthesize", "--text-file", text_path, "--out", output, "--provider", "doubao"])
         return {"provider": "Doubao seed-tts-2.0", "voice": "zh_female_vv_uranus_bigtts", "first_audio_seconds": None}
     script = "$r=[Console]::In.ReadToEnd()|ConvertFrom-Json; Add-Type -AssemblyName System.Speech; $s=[System.Speech.Synthesis.SpeechSynthesizer]::new(); $v=$s.Voice; $s.SetOutputToWaveFile($r.out); $s.Speak($r.text); $s.Dispose(); @{voice=$v.Name;culture=$v.Culture.Name;provider='Windows System.Speech'}|ConvertTo-Json -Compress"
     # Windows PowerShell is the existing application's actual System.Speech host.
@@ -102,10 +102,17 @@ def render(directory, cases, models, created_at=None):
     total = sum(len(x["results"]) for x in cases) + len(models)
     passed = sum(x.get("ok", True) for c in cases for x in c["results"]) + sum(x.get("ok", True) for x in models)
     created_at = created_at or datetime.now().astimezone().isoformat()
-    payload = {"created_at": created_at, "cases": cases, "models": models, "audio_files": total, "successful_audio_files": passed, "subjective_listening": "pending", "production_switched": False}
+    status_path = Path(r"D:\Artifacts\MimoTTS\production\20260927\status.json")
+    production = json.loads(status_path.read_text(encoding="utf-8")) if status_path.exists() else {}
+    payload = {"created_at": created_at, "cases": cases, "models": models, "audio_files": total, "successful_audio_files": passed, "subjective_listening": "pending", "production_switched": bool(production) and all(a["activation"] == "active" for a in production.get("applications", [])), "production": production}
     (directory / "results.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     template = (PROJECT / "templates" / "comparison.html").read_text(encoding="utf-8")
-    content = template.replace("{{CASES}}", "\n".join(sections)).replace("{{MODELS}}", model_cards).replace("{{COUNT}}", f"{passed}/{total}").replace("{{TIME}}", datetime.fromisoformat(created_at).strftime("%Y-%m-%d %H:%M"))
+    content = template.replace("{{CASES}}", "\n".join(sections)).replace("{{MODELS}}", model_cards).replace("{{COUNT}}", f"{passed}/{total}").replace("{{SCENES}}", str(len(cases))).replace("{{TIME}}", datetime.fromisoformat(created_at).strftime("%Y-%m-%d %H:%M"))
+    rows = "".join(f'<tr><td>{html.escape(a["name"])}</td><td>{html.escape(a["status"])}</td></tr>' for a in production.get("applications", []))
+    section = f'<section class="case" id="production"><h2>正式切换进度</h2><p>已批准切换；基于当前源码合并，保留测试之后的更新。运行状态以本表为准。</p><table><thead><tr><th>入口</th><th>当前状态</th></tr></thead><tbody>{rows}</tbody></table><p><a href="../../production/20260927/deployment.md">迁移与验收记录</a> · <a href="../../production/20260927/status.json">正式状态 JSON</a></p></section>' if production else ""
+    content = content.replace("{{PRODUCTION}}", section)
+    if production:
+        content = content.replace("正式版本保持现状；本页为独立测试产物。", "新旧录音保持原始对照；正式迁移状态见下表。").replace("正式软件尚未切换。", "此表为历史隔离包，不能直接用于正式安装。").replace("隔离测试版本", "历史隔离测试版本")
     (directory / "index.html").write_text(content, encoding="utf-8")
     return payload
 
@@ -133,6 +140,14 @@ def main():
         {"id": "openfocus", "title": "OpenFocus · 中文语音提醒", "text": "请把注意力回到当前任务。先完成眼前的一小步，再继续下一项。如果需要休息，请先保存当前进度。", "old_provider": "windows", "old_label": "Windows 系统语音", "new_voice": "茉莉", "note": "旧方案使用程序原有的 System.Speech 默认声线；新方案需要联网。此对比只生成录音，没有启用督学或限制规则。"},
         {"id": "speechkit", "title": "通用 TTS · 中文讲解与配音", "text": "理解一个概念，不只是记住它的定义。试着用自己的话解释它，举一个例子，再想一想它在什么情况下不适用。", "old_provider": "doubao", "old_label": "豆包 / speech-kit", "new_voice": "茉莉", "note": "旧方案使用现有 speech-kit 的豆包配置；MiMo 共用新封装。这里比较自然度、停顿与发音，暂不评价字幕时间轴适配。"},
     ]
+    obsidian_path = Path(r"D:\Workspaces\新建文件夹\.obsidian\plugins\note-reader-cosyvoice-focus\data.json")
+    if obsidian_path.exists():
+        reader = json.loads(obsidian_path.read_text(encoding="utf-8"))
+        voice = reader.get("mimoVoice", "Mia")
+        cases.append({"id": "obsidian", "title": "Obsidian 阅读器 · 现用语速", "text": "A new idea becomes easier to understand when you connect it to what you already know. Pause at the end of a paragraph, then read the next part.",
+            "old_provider": "edge", "old_voice": reader.get("edgeTtsVoice", "en-GB-RyanNeural"), "old_label": "Edge TTS / " + reader.get("edgeTtsVoice", "en-GB-RyanNeural"),
+            "new_voice": "Mia" if voice == "auto" else voice, "rate": round((reader.get("speed", 1) - 1) * 100),
+            "note": "旧声线与语速取自本机阅读器配置；新方案使用 MiMo。保留分段、数学朗读、高亮及右侧面板。"})
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(lambda case: run_case(case, directory), cases))
     # Reuse the already verified same-text three-model run, with its original timings.

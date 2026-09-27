@@ -1,4 +1,5 @@
 """Small live canaries against packaged transports; no production profiles/UI."""
+import argparse
 import base64
 import importlib.util
 import io
@@ -17,7 +18,10 @@ from unittest.mock import patch
 from mimo_tts import adapters
 
 BUILDS = Path(r"D:\Artifacts\MimoTTS\test-builds")
-ROOT = Path(r"D:\Artifacts\MimoTTS\adapter-checks") / uuid.uuid4().hex[:10]
+parser = argparse.ArgumentParser()
+parser.add_argument("--production", action="store_true")
+args = parser.parse_args()
+ROOT = (Path(r"D:\Artifacts\MimoTTS\production\20260927\canaries") if args.production else Path(r"D:\Artifacts\MimoTTS\adapter-checks")) / uuid.uuid4().hex[:10]
 PYTHON = Path(r"D:\AppData\MimoTTS\venv\Scripts\python.exe")
 
 
@@ -27,7 +31,7 @@ def decode(path):
 
 
 def native_canary():
-    process = subprocess.Popen([PYTHON, "-u", BUILDS / "WebLilt" / "native" / "host.py"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    process = subprocess.Popen([PYTHON, "-u", (Path(r"D:\Projects\WebLilt\native\host.py") if args.production else BUILDS / "WebLilt" / "native" / "host.py")], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     inbox = queue.Queue()
 
     def read():
@@ -52,7 +56,7 @@ def native_canary():
 
     try:
         health = request({"id": "health", "op": "health"})[-1]
-        assert health["engine"] == "MiMo test"
+        assert health["engine"] == ("mimo-v2.5-tts" if args.production else "MiMo test")
         voices = request({"id": "voices", "op": "voices"})[-1]["voices"]
         assert "mimo-Mia" in [v["name"] for v in voices]
         events = request({"id": "speech", "op": "synthesize", "text": "This is an isolated browser speech test.", "voice": "mimo-Mia", "rate": 1, "pitch": 0})
@@ -74,7 +78,9 @@ def native_canary():
 def clipper_canary():
     output = ROOT / "clipper.mp3"
     request = {"text": "A careful comparison uses the same text.", "audio": str(output), "voice": "Mia", "rate": -3, "volume": -18, "pitch": 0, "replay": False, "play": False}
-    run = subprocess.run([PYTHON, "-X", "utf8", BUILDS / "KnowledgeClipper" / "release" / "RemNoteQuickClipper.Desktop" / "Release" / "net8.0-windows" / "win-x64" / "helpers" / "stream_speech.py", "--prepare"], input=json.dumps(request), text=True, encoding="utf-8", capture_output=True, timeout=180)
+    helper = (Path(r"D:\Artifacts\MimoTTS\production\20260927\KnowledgeClipper\release") if args.production else BUILDS / "KnowledgeClipper" / "release") / "RemNoteQuickClipper.Desktop" / "Release" / "net8.0-windows" / "win-x64" / "helpers" / "stream_speech.py"
+    runtime_python = Path(r"D:\Applications\RemNoteQuickClipperRuntime\edge-tts-7.2.8\Scripts\python.exe") if args.production else PYTHON
+    run = subprocess.run([runtime_python, "-X", "utf8", helper, "--prepare"], input=json.dumps(request), text=True, encoding="utf-8", capture_output=True, timeout=180)
     assert run.returncode == 0, "Packaged Clipper helper failed"
     events = [json.loads(line)["event"] for line in run.stdout.splitlines()]
     assert events == ["helperReady", "firstAudioChunk", "audioComplete"], events
@@ -98,7 +104,7 @@ def anki_canary():
 
 
 def openfocus_canary():
-    path = BUILDS / "OpenFocus" / "openfocus" / "supervision" / "media.py"
+    path = (Path(r"D:\Projects\OpenFocus") if args.production else BUILDS / "OpenFocus") / "openfocus" / "supervision" / "media.py"
     spec = importlib.util.spec_from_file_location("mimo_openfocus_test_media", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

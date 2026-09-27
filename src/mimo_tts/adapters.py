@@ -1,4 +1,4 @@
-"""Transport adapters for isolated application builds; never imported by production."""
+"""Shared MiMo speech transports used by installed applications and test builds."""
 from __future__ import annotations
 
 import asyncio
@@ -44,11 +44,11 @@ def clipper_main():
     audio = Path(request["audio"])
     rate, volume = 1 + request.get("rate", 0) / 100, 1 + request.get("volume", 0) / 100
     if request.get("pitch", 0):
-        raise MimoError("MiMo test build requires pitch=0; Hz pitch shifting is not provided.")
+        raise MimoError("MiMo requires pitch=0; Hz pitch shifting is not provided.")
     replay = bool(request["replay"])
     player = None
     if request.get("play", True):
-        input_format = ["-f", "mp3"] if replay else ["-f", "s16le", "-ar", "24000", "-ac", "1"]
+        input_format = ["-f", "mp3"] if replay else ["-f", "s16le", "-ar", "24000", "-ch_layout", "mono"]
         command = [request["ffplay"], "-nodisp", "-autoexit", "-loglevel", "error", *input_format, "-i", "pipe:0"]
         if not replay:
             command += ["-af", f"atempo={rate},volume={volume}"]
@@ -79,12 +79,17 @@ def clipper_main():
             player.stdin.close()
             player.stderr.read()
             if player.wait(timeout=600):
-                raise MimoError("Test player could not complete playback.")
+                raise MimoError("Audio player could not complete playback.")
             emit("playbackComplete")
     finally:
         if player and player.poll() is None:
             player.kill()
             player.wait()
+        if player and not player.stdin.closed:
+            try:
+                player.stdin.close()
+            except OSError:
+                pass
 
 
 async def weblilt_synthesize(request, send):
@@ -92,7 +97,7 @@ async def weblilt_synthesize(request, send):
     if not isinstance(text, str) or not text.strip() or len(text) > 1200:
         raise ValueError("Text must contain 1-1200 characters")
     if request.get("pitch", 0):
-        raise ValueError("MiMo comparison supports pitch=0 only")
+        raise ValueError("MiMo supports pitch=0 only")
     speed = float(request.get("rate", 1))
     if not .5 <= speed <= 2.5:
         raise ValueError("Rate is outside supported range")
@@ -151,7 +156,7 @@ class AnkiBackend:
         command = [str(PYTHON), "-X", "utf8", "-m", "mimo_tts.cli", "--json", "synthesize", "--text-file", "-", "--voice", voice, "--out", str(target)]
         result = subprocess.run(command, input=self.spoken(job), text=True, encoding="utf-8", capture_output=True, timeout=600, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         if result.returncode:
-            raise RuntimeError("MiMo test synthesis failed; check mimo-tts doctor")
+            raise RuntimeError("MiMo synthesis failed; check mimo-tts doctor")
         return str(target)
 
 
@@ -186,7 +191,7 @@ def main():
         else:
             clipper_main()
     except Exception as exc:
-        print(str(exc) if isinstance(exc, MimoError) else type(exc).__name__ + ": MiMo test audio failed", file=sys.stderr)
+        print(str(exc) if isinstance(exc, MimoError) else type(exc).__name__ + ": MiMo audio failed", file=sys.stderr)
         return 1
     return 0
 

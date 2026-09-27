@@ -48,7 +48,7 @@ print(result["path"])
 
 ## 对照页面与测试版本
 
-最新页面路径保存在 `D:\Artifacts\MimoTTS\latest-report.json`。当前报告有 5 组同文旧／新录音和 3 种 MiMo 同文录音，支持顺序播放、倍速、下载。旧版声线来自源码默认或本机现用配置。合成与解码成功不等于主观质量胜出。
+最新页面路径保存在 `D:\Artifacts\MimoTTS\latest-report.json`。当前报告有 6 组同文旧／新录音和 3 种 MiMo 同文录音，支持顺序播放、倍速、下载。旧版声线来自源码默认或本机现用配置。合成与解码成功不等于主观质量胜出。
 
 | 软件 | 入口（相对 D:\Artifacts\MimoTTS\test-builds） | 隔离方式 |
 | --- | --- | --- |
@@ -76,3 +76,9 @@ node scripts\verify_report.mjs
 浏览器验收使用独立 Chrome 无头资料目录，检测全部音频实际播放进度、顺序切换、倍速、停止和桌面／窄屏布局。静音运行不证明物理扬声器出声。新旧耗时包括不同调用入口开销，且样本仅一次，不能据此做长期性能排名。
 
 Git 排除凭据、参考音频、用户输入、缓存、数据和构建产物。三模型对比使用生成声音作为克隆参考。
+
+## 正式迁移（2026-09-27）
+
+用户已批准全部迁移；从各软件当前源码做增量合并和重新构建，不复用旧隔离包覆盖同期更新。通用 speech-kit 默认 MiMo，普通合成和 SRT 分段合同保留；单次 `--provider doubao` 可比较原方案。OpenFocus 后台已激活，Anki 和剪藏主程序等待重启确认；WebLilt 正式 Native Host 已激活，用户确认已加载扩展；Obsidian 阅读器已通过官方 CLI 重载并切换，保留原语速与右侧面板。
+
+准确运行状态及验收：`D:\Artifacts\MimoTTS\production\20260927\status.json`、`deployment.md`。`scripts/production_receipt.py` 记录源码基线和当前差异；`scripts/verify_adapters.py --production` 验证正式源码/包入口，不操作私人卡片或督学规则。源码中未提交的其他更新保留；回退只逆向合并语音补丁，不还原整个目录。
