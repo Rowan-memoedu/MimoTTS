@@ -62,8 +62,9 @@ print(result["path"])
 
 ## 复现与验证
 
+干净检出的离线单元测试入口、`PYTHONPATH` 设置、覆盖范围及 mock 边界见 [离线测试说明](docs/testing.md)。以下构建与集成验收命令依赖本机环境，不属于离线单元测试。
+
 ```powershell
-& D:\AppData\MimoTTS\venv\Scripts\python.exe -m unittest discover -s tests -v
 & D:\AppData\MimoTTS\venv\Scripts\python.exe scripts\build_test_versions.py
 & D:\Artifacts\MimoTTS\test-builds\KnowledgeClipper\Build.ps1
 & D:\AppData\MimoTTS\venv\Scripts\python.exe scripts\verify_adapters.py
