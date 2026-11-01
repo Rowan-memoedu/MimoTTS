@@ -78,7 +78,7 @@ def clipper_main():
                         player.stdin.write(data)
             # Replay deliberately does not emit audioComplete or invoke the API.
         else:
-            synthesize(request["text"], audio, voice=selected_voice(request["text"], request["voice"]), on_chunk=chunk, speed=rate, volume=volume)
+            synthesize(request["text"], audio, voice=selected_voice(request["text"], request["voice"]), style=request.get("style", ""), on_chunk=chunk, speed=rate, volume=volume)
             emit("audioComplete")
         if player:
             player.stdin.close()
