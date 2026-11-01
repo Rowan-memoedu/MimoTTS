@@ -60,8 +60,14 @@ def split_text(text, limit=400):
         raise MimoError("Chunk size must be between 50 and 1000 characters.")
     parts = []
     while len(text) > limit:
-        candidates = list(re.finditer(r"[。！？.!?；;\n]\s*|\s+", text[:limit]))
-        end = candidates[-1].end() if candidates and candidates[-1].end() >= limit // 3 else limit
+        # A later space must not win over a complete sentence. Keep decimal
+        # points and punctuation inside words out of the sentence boundary set.
+        window = text[:limit]
+        sentences = list(re.finditer(r'[。！？!?]+[”’"\')\]）]*\s*|\.(?=\s)\s*|\n+', window))
+        clauses = list(re.finditer(r"[，,；;：:]\s*", window))
+        spaces = list(re.finditer(r"\s+", window))
+        candidates = sentences or clauses or spaces
+        end = candidates[-1].end() if candidates else limit
         parts.append(text[:end])
         text = text[end:]
     if text:
