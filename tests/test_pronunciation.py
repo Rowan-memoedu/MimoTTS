@@ -38,6 +38,11 @@ class PronunciationTests(unittest.TestCase):
         self.assertTrue(all(not part.endswith("3.") for part in parts))
         self.assertEqual("".join(parts), text)
 
+    def test_sentence_keeps_its_closing_quote(self):
+        sentence = 'She said, "We will finish tomorrow." '
+        text = sentence + "The following sentence continues with several more words. " * 3
+        self.assertEqual(client.split_text(text, 60)[0], sentence)
+
     def test_style_is_separate_and_part_of_cache_identity(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -63,7 +63,7 @@ def split_text(text, limit=400):
         # A later space must not win over a complete sentence. Keep decimal
         # points and punctuation inside words out of the sentence boundary set.
         window = text[:limit]
-        sentences = list(re.finditer(r'[。！？!?]+[”’"\')\]）]*\s*|\.(?=\s)\s*|\n+', window))
+        sentences = list(re.finditer(r'[。！？!?]+[”’"\')\]）]*\s*|\.[”’"\')\]）]*(?=\s)\s*|\n+', window))
         clauses = list(re.finditer(r"[，,；;：:]\s*", window))
         spaces = list(re.finditer(r"\s+", window))
         candidates = sentences or clauses or spaces
