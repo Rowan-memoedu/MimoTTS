@@ -1,15 +1,15 @@
 ---
 name: mimo-tts
-description: Generate speech with the local MiMo TTS CLI, using preset voices, voice design, or an authorized voice sample; create playable comparisons when testing speech providers.
+description: Generate speech with the shared local TTS CLI and its configured OpenAI default, with explicit retained MiMo preset, design and authorized cloning routes; compare same-text recordings.
 ---
 
 # MiMo speech
 
-The shared implementation is `D:\Projects\MimoTTS`. Run `D:\AppData\MimoTTS\bin\mimo-tts.cmd`; new terminals also expose `mimo-tts` on PATH. It reads `MIMO_API_KEY` from the current process or Windows user environment, so a stale parent process does not require re-entering the key. Do not display the key or place it in arguments/files.
+The shared implementation is `D:\Projects\MimoTTS`. Run `D:\AppData\MimoTTS\bin\mimo-tts.cmd`; new terminals also expose `mimo-tts` on PATH. Current default is OpenAI `gpt-realtime-2.1-mini`, selected in `D:\AppData\MimoTTS\provider.json`, with marin/cedar voices and the shared external `OPENAI_ENV_FILE`. If the user explicitly requests MiMo, use `--provider mimo`; that retained route reads the original `MIMO_API_KEY` environment setting. Never display credentials or place them in command arguments. Cloning remains explicitly MiMo-only; do not silently cross providers after failure.
 
 Use `--json doctor` to check setup and `--json doctor --probe` when a live connection check is needed. Credentials present alone do not prove the API works.
 
-Default to `preset` and Mia for both Chinese and English, as selected from the Clipper comparison recording. Explicit voice selection remains available. Use `design --style` for a described voice, and `clone --reference` for a user-authorized WAV/MP3 or a generated voice. Design/clone do not provide the same low-latency streaming behavior as preset. Free pricing was verified on 2026-09-27; recheck the official model page before making later cost claims.
+Default to the configured provider and preset mode. OpenAI maps legacy voices to marin; explicit marin/cedar selection is available and transcript fidelity is checked before saving/caching. For the retained MiMo route, use Mia for Chinese and English, `--mode design --style` for a described voice, or `--mode clone --reference` for a user-authorized sample. Historical MiMo pricing is not current OpenAI pricing; check the selected provider's official model page for costs.
 
 ```powershell
 & 'D:\AppData\MimoTTS\bin\mimo-tts.cmd' --json synthesize --text '你好，这是语音测试。' --out 'D:\Artifacts\MimoTTS\hello.wav'

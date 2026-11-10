@@ -8,10 +8,13 @@ from pathlib import Path
 
 root = Path(sys.argv[1]).resolve()
 expected = Path(r"D:\Artifacts\MimoTTS\test-builds\KnowledgeClipper").resolve()
-production = Path(r"D:\Artifacts\MimoTTS\production\20260927\KnowledgeClipper").resolve()
-if expected not in root.parents and production not in root.parents:
+production_root = Path(r"D:\Artifacts\MimoTTS\production").resolve()
+production = next((parent for parent in root.parents if parent.name == 'KnowledgeClipper' and
+                   parent.parent.parent == production_root and parent.parent.name.isdigit() and
+                   len(parent.parent.name) == 8), None)
+if expected not in root.parents and production is None:
     raise SystemExit("Refusing inventory outside a known MiMo delivery directory")
-if production in root.parents:
+if production is not None:
     expected = production
 files = []
 for path in sorted(root.rglob("*"), key=lambda p: p.relative_to(root).as_posix()):

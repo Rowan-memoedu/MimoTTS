@@ -60,8 +60,14 @@ def split_text(text, limit=400):
         raise MimoError("Chunk size must be between 50 and 1000 characters.")
     parts = []
     while len(text) > limit:
-        candidates = list(re.finditer(r"[。！？.!?；;\n]\s*|\s+", text[:limit]))
-        end = candidates[-1].end() if candidates and candidates[-1].end() >= limit // 3 else limit
+        # A later space must not win over a complete sentence. Keep decimal
+        # points and punctuation inside words out of the sentence boundary set.
+        window = text[:limit]
+        sentences = list(re.finditer(r'[。！？!?]+[”’"\')\]）]*\s*|\.[”’"\')\]）]*(?=\s)\s*|\n+', window))
+        clauses = list(re.finditer(r"[，,；;：:]\s*", window))
+        spaces = list(re.finditer(r"\s+", window))
+        candidates = sentences or clauses or spaces
+        end = candidates[-1].end() if candidates else limit
         parts.append(text[:end])
         text = text[end:]
     if text:
@@ -169,14 +175,14 @@ def _sse(response):
             yield json.loads(joined)
 
 
-def _pcm(payload, on_chunk=None):
+def _pcm(payload, on_chunk=None, opener=None):
     started = time.perf_counter()
     first = None
     chunks = []
     total = 0
     finish = None
     usage = None
-    with _open(payload) as response:
+    with (opener or _open)(payload) as response:
         if payload["stream"]:
             for event in _sse(response):
                 if event.get("error"):
@@ -240,7 +246,7 @@ def transcode(source, destination, speed=1.0, volume=1.0):
         raise MimoError("ffmpeg could not convert the generated audio.")
 
 
-def synthesize(text, out, *, mode="preset", voice=None, style="", reference=None, stream=None, cache=True, chunk_chars=400, on_chunk=None, speed=1.0, volume=1.0):
+def synthesize(text, out, *, mode="preset", voice=None, style="", reference=None, stream=None, cache=True, chunk_chars=400, on_chunk=None, speed=1.0, volume=1.0, opener=None):
     if not 0.5 <= speed <= 2.5 or not 0 <= volume <= 3:
         raise MimoError("Speed or volume is outside the supported range.")
     out = Path(out).absolute()
@@ -272,7 +278,7 @@ def synthesize(text, out, *, mode="preset", voice=None, style="", reference=None
                 for offset in range(0, len(pcm), 16384):
                     on_chunk(pcm[offset:offset + 16384])
         else:
-            pcm, metrics = _pcm(request, on_chunk)
+            pcm, metrics = _pcm(request, on_chunk, opener) if opener is not None else _pcm(request, on_chunk)
             if cache:
                 with tempfile.NamedTemporaryFile(dir=CACHE, suffix=".wav", delete=False) as handle:
                     temporary = Path(handle.name)

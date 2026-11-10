@@ -3,21 +3,26 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import io
 import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .client import ARTIFACTS, MimoError, VOICES, default_voice, synthesize
+from .client import ARTIFACTS, MimoError, VOICES, default_voice
+from .router import synthesize, selected_provider
 
 PYTHON = Path(r"D:\AppData\MimoTTS\venv\Scripts\python.exe")
 FFMPEG_BIN = Path(r"D:\Applications\P47\FFmpeg\ffmpeg-8.1.2-full_build\bin")
+_emit_lock = threading.Lock()
 
 
 def runtime_environment():
@@ -31,6 +36,9 @@ def runtime_environment():
 
 
 def selected_voice(text, old_voice=""):
+    if selected_provider() == 'openai':
+        voice = old_voice.removeprefix('openai-').removeprefix('mimo-')
+        return voice if voice in ('marin','cedar') else 'marin'
     if old_voice in VOICES:
         return old_voice
     if old_voice.startswith("mimo-") and old_voice[5:] in VOICES:
@@ -39,30 +47,59 @@ def selected_voice(text, old_voice=""):
 
 
 def emit(name, **extra):
-    print(json.dumps({"event": name, "at": datetime.now(timezone.utc).isoformat(), **extra}), flush=True)
+    with _emit_lock:
+        print(json.dumps({"event": name, "at": datetime.now(timezone.utc).isoformat(), **extra}), flush=True)
 
 
 def clipper_main():
     if "--prepare" in sys.argv:
         emit("helperReady")
+    transport = None
+    if '--preconnect' in sys.argv and selected_provider() == 'mimo':
+        from .preconnect import PreparedTransport
+        transport = PreparedTransport(lambda: emit('transportReady'))
     request = json.load(sys.stdin)
     audio = Path(request["audio"])
     rate, volume = 1 + request.get("rate", 0) / 100, 1 + request.get("volume", 0) / 100
     if request.get("pitch", 0):
         raise MimoError("MiMo requires pitch=0; Hz pitch shifting is not provided.")
     replay = bool(request["replay"])
+    # Opt-in for new Clipper builds. The MP3 remains the card/export recording;
+    # replay retains the exact PCM and filters heard during streaming playback.
+    lossless = bool(request.get("losslessReplay", False))
+    sidecar = Path(str(audio) + ".pcm")
+    replay_pcm = None
+    if replay and lossless and sidecar.exists():
+        try:
+            if sidecar.is_symlink() or getattr(sidecar.stat(), "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0):
+                raise ValueError("linked sidecar")
+            with sidecar.open("rb") as saved:
+                metadata = json.loads(saved.readline(4096))
+                replay_pcm = saved.read()
+            if (metadata["schema"] != 1 or not replay_pcm or len(replay_pcm) % 2 or
+                    metadata["audio_sha256"] != hashlib.sha256(audio.read_bytes()).hexdigest() or
+                    metadata["pcm_sha256"] != hashlib.sha256(replay_pcm).hexdigest()):
+                raise ValueError("recording mismatch")
+            rate, volume = metadata["rate"], metadata["volume"]
+            if not .5 <= rate <= 2.5 or not 0 <= volume <= 3:
+                raise ValueError("invalid playback parameters")
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise MimoError("Saved lossless recording is invalid; replay was stopped.") from exc
     player = None
     if request.get("play", True):
-        input_format = ["-f", "mp3"] if replay else ["-f", "s16le", "-ar", "24000", "-ch_layout", "mono"]
+        input_format = ["-f", "mp3"] if replay and replay_pcm is None else ["-f", "s16le", "-ar", "24000", "-ch_layout", "mono"]
         command = [request["ffplay"], "-nodisp", "-autoexit", "-loglevel", "error", *input_format, "-i", "pipe:0"]
-        if not replay:
+        if not replay or replay_pcm is not None:
             command += ["-af", f"atempo={rate},volume={volume}"]
         player = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         emit("playerStarted", pid=player.pid)
     first = True
+    pcm = bytearray()
 
     def chunk(data):
         nonlocal first
+        if lossless:
+            pcm.extend(data)
         if first:
             emit("firstAudioChunk")
             first = False
@@ -72,13 +109,22 @@ def clipper_main():
 
     try:
         if replay:
-            with audio.open("rb") as saved:
+            with (io.BytesIO(replay_pcm) if replay_pcm is not None else audio.open("rb")) as saved:
                 while data := saved.read(16384):
                     if player:
                         player.stdin.write(data)
             # Replay deliberately does not emit audioComplete or invoke the API.
         else:
-            synthesize(request["text"], audio, voice=selected_voice(request["text"], request["voice"]), on_chunk=chunk, speed=rate, volume=volume)
+            options = {'opener': transport.open} if transport and request.get('preconnect', False) else {}
+            synthesize(request["text"], audio, voice=selected_voice(request["text"], request["voice"]), style=request.get("style", ""), on_chunk=chunk, speed=rate, volume=volume, **options)
+            if lossless:
+                if not pcm or len(pcm) % 2:
+                    raise MimoError("Streaming PCM recording is incomplete.")
+                metadata = {"schema": 1, "audio_sha256": hashlib.sha256(audio.read_bytes()).hexdigest(),
+                            "pcm_sha256": hashlib.sha256(pcm).hexdigest(), "rate": rate, "volume": volume}
+                with sidecar.open("xb") as saved:
+                    saved.write(json.dumps(metadata).encode("utf-8") + b"\n")
+                    saved.write(pcm)
             emit("audioComplete")
         if player:
             player.stdin.close()
@@ -87,6 +133,8 @@ def clipper_main():
                 raise MimoError("Audio player could not complete playback.")
             emit("playbackComplete")
     finally:
+        if transport:
+            transport.close()
         if player and player.poll() is None:
             player.kill()
             player.wait()
@@ -122,7 +170,7 @@ async def weblilt_synthesize(request, send):
             import base64
             for offset in range(0, len(data), 96 * 1024):
                 send({"event": "audio", "data": base64.b64encode(data[offset:offset + 96 * 1024]).decode("ascii")})
-            send({"event": "done", "boundaries": [], "audioBytes": len(data), "provider": "mimo", "wordTimestamps": False})
+            send({"event": "done", "boundaries": [], "audioBytes": len(data), "provider": selected_provider(), "wordTimestamps": False})
         finally:
             if process.returncode is None:
                 process.kill()
@@ -145,7 +193,7 @@ class AnkiBackend:
         class RequestKey(str):
             def hash(self):
                 return str(self)
-        return RequestKey(hashlib.sha256(json.dumps({"schema": 2, "provider": "mimo-v2.5-tts", "voice": "Mia", "text": self.spoken(job), "mode": job[1]}, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest())
+        return RequestKey(hashlib.sha256(json.dumps({"schema": 2, "provider": "gpt-realtime-2.1-mini" if selected_provider() == 'openai' else "mimo-v2.5-tts", "voice": selected_voice(self.spoken(job), "Mia"), "text": self.spoken(job), "mode": job[1]}, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest())
 
     def cached(self, job):
         path = self.root / (self.key(job) + ".mp3")
@@ -156,7 +204,7 @@ class AnkiBackend:
         if existing:
             return existing
         target = self.root / (self.key(job) + ".mp3")
-        voice = "Mia"
+        voice = selected_voice(self.spoken(job), "Mia")
         # Anki's embedded Python does not need the package or networking dependencies.
         command = [str(PYTHON), "-I", "-X", "utf8", "-m", "mimo_tts.cli", "--json", "synthesize", "--text-file", "-", "--voice", voice, "--out", str(target)]
         result = subprocess.run(command, input=self.spoken(job), text=True, encoding="utf-8", capture_output=True, timeout=600, env=runtime_environment(), creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
