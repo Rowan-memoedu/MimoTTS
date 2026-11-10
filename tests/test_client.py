@@ -66,9 +66,17 @@ class ClientTests(unittest.TestCase):
     def test_english_only_and_voice_mapping(self):
         self.assertEqual(AnkiBackend.spoken(("猫 cat 狗 dog", "english")), "cat dog")
         self.assertEqual(AnkiBackend.spoken(("猫 cat", "bilingual")), "猫 cat")
-        self.assertEqual(selected_voice("hello", "en-US-AriaNeural"), "Mia")
-        self.assertEqual(selected_voice("hello", "mimo-Dean"), "Dean")
-        self.assertEqual(selected_voice("", "zh_female_vv_uranus_bigtts"), "Mia")
+        with patch('mimo_tts.adapters.selected_provider', return_value='mimo'):
+            self.assertEqual(selected_voice("hello", "en-US-AriaNeural"), "Mia")
+            self.assertEqual(selected_voice("hello", "mimo-Dean"), "Dean")
+            self.assertEqual(selected_voice("", "zh_female_vv_uranus_bigtts"), "Mia")
+
+    def test_openai_voice_mapping_preserves_supported_voices(self):
+        with patch('mimo_tts.adapters.selected_provider', return_value='openai'):
+            for saved, expected in [('openai-cedar', 'cedar'), ('marin', 'marin'),
+                                    ('mimo-Dean', 'marin'), ('en-US-AriaNeural', 'marin')]:
+                with self.subTest(saved=saved):
+                    self.assertEqual(selected_voice('hello', saved), expected)
 
 
 if __name__ == "__main__":

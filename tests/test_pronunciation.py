@@ -62,18 +62,22 @@ class PronunciationTests(unittest.TestCase):
                 self.assertTrue(cached["segments"][0]["cache_hit"])
 
     def test_clipper_forwards_style_but_old_requests_remain_compatible(self):
-        for style in (None, "标准普通话，自然朗读。", "Natural American English."):
-            with self.subTest(style=style), tempfile.TemporaryDirectory() as directory:
+        for provider_name, expected_voice, style in (
+                (provider_name, voice, style)
+                for provider_name, voice in [('mimo', 'Mia'), ('openai', 'marin')]
+                for style in (None, "标准普通话，自然朗读。", "Natural American English.")):
+            with self.subTest(provider=provider_name, style=style), tempfile.TemporaryDirectory() as directory:
                 request = dict(text="Public sample", voice="Mia", audio=str(Path(directory) / "sample.mp3"), replay=False, play=False)
                 if style is not None:
                     request["style"] = style
                 with patch.object(adapters.sys, "argv", ["helper"]), \
                      patch.object(adapters.sys, "stdin", io.StringIO(json.dumps(request))), \
+                     patch.object(adapters, "selected_provider", return_value=provider_name), \
                      patch.object(adapters, "emit"), patch.object(adapters, "synthesize") as provider:
                     adapters.clipper_main()
                     self.assertEqual(provider.call_args.kwargs["style"], style or "")
                     self.assertEqual(provider.call_args.args[0], "Public sample")
-                    self.assertEqual(provider.call_args.kwargs["voice"], "Mia")
+                    self.assertEqual(provider.call_args.kwargs["voice"], expected_voice)
 
 
 if __name__ == "__main__":
