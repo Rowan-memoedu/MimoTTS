@@ -7,7 +7,7 @@ name = "fy-mimo-tts"
 version = "0.1.0"
 description = "MiMo TTS CLI, streaming client and isolated comparison adapters"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = ["websocket-client==1.9.0"]
 
 [project.scripts]
 mimo-tts = "mimo_tts.cli:main"

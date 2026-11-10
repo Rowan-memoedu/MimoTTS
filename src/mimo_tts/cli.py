@@ -9,6 +9,7 @@ import wave
 from pathlib import Path
 
 from .client import ARTIFACTS, BASE_URL, MODELS, MimoError, api_get, build_request, credential, split_text, synthesize, voices
+from .router import synthesize, voices, selected_provider, openai_key
 
 
 class Parser(argparse.ArgumentParser):
@@ -17,7 +18,7 @@ class Parser(argparse.ArgumentParser):
 
 
 def parser():
-    p = Parser(description="MiMo TTS: preset voices, voice design, cloning and comparison audio.")
+    p = Parser(description="Shared TTS: OpenAI by local configuration, with retained MiMo modes.")
     p.add_argument("--json", action="store_true", help="Stable JSON envelope; errors never include API bodies or keys")
     sub = p.add_subparsers(dest="command", required=True)
     d = sub.add_parser("doctor", help="Check local configuration; optionally synthesize a small probe")
@@ -30,6 +31,7 @@ def parser():
     source.add_argument("--text-file", type=Path, help="UTF-8 file; - means stdin")
     s.add_argument("--out", type=Path, required=True)
     s.add_argument("--mode", choices=list(MODELS), default="preset")
+    s.add_argument("--provider", choices=['openai','mimo'], help='Override the configured provider; MiMo remains available.')
     s.add_argument("--voice", help="Preset ID; default 茉莉 for Chinese or Mia for English")
     s.add_argument("--style", default="")
     s.add_argument("--reference", type=Path, help="Authorized WAV/MP3 sample for clone mode")
@@ -66,6 +68,13 @@ def main(argv=None):
     try:
         args = parser().parse_args(argv)
         if args.command == "doctor":
+            if selected_provider()=='openai':
+                openai_key()
+                data={'provider':'openai','model':'gpt-realtime-2.1-mini','credential_present':True,'network_verified':False}
+                if args.probe:
+                    data['probe']=synthesize('Hello. This is an audio connection test.',ARTIFACTS/'probes'/(uuid.uuid4().hex+'.wav'),cache=False)
+                    data['network_verified']=True
+                print(json.dumps({'ok':True,'command':args.command,'data':data}));return 0
             try:
                 _, source = credential()
                 present = True
@@ -79,7 +88,11 @@ def main(argv=None):
         elif args.command == "voices":
             data, ok = {"voices": voices()}, True
         elif args.command == "models":
-            data, ok = {"models": [{"mode": key, "id": model, "low_latency_streaming": key == "preset"} for key, model in MODELS.items()]}, True
+            if selected_provider() == 'openai':
+                data = {"provider": "openai", "models": [{"mode": key, "id": "gpt-realtime-2.1-mini", "low_latency_streaming": True} for key in ('preset', 'design')]}
+            else:
+                data = {"provider": "mimo", "models": [{"mode": key, "id": model, "low_latency_streaming": key == "preset"} for key, model in MODELS.items()]}
+            ok = True
         elif args.command == "request":
             data, ok = api_get(args.path), True
         elif args.command == "compare":
@@ -94,11 +107,18 @@ def main(argv=None):
             options = dict(mode=args.mode, voice=args.voice, style=args.style, reference=args.reference, stream=False if args.no_stream else None, chunk_chars=args.chunk_chars)
             if args.dry_run:
                 parts = split_text(text, args.chunk_chars)
-                for part in parts:
-                    build_request(part, args.mode, args.voice, args.style, args.reference, not args.no_stream and args.mode == "preset")
-                data = {"dry_run": True, "characters": len(text), "segments": len(parts), "model": MODELS[args.mode], "out": str(args.out)}
+                provider = args.provider or selected_provider()
+                if provider == 'openai':
+                    if args.mode == 'clone' or args.reference is not None:
+                        raise MimoError('OpenAI cloning is not configured. Select the retained MiMo provider explicitly for cloning.')
+                    model = 'gpt-realtime-2.1-mini'
+                else:
+                    for part in parts:
+                        build_request(part, args.mode, args.voice, args.style, args.reference, not args.no_stream and args.mode == "preset")
+                    model = MODELS[args.mode]
+                data = {"dry_run": True, "provider": provider, "characters": len(text), "segments": len(parts), "model": model, "out": str(args.out)}
             else:
-                data = synthesize(text, args.out, cache=not args.no_cache, speed=args.speed, volume=args.volume, **options)
+                data = synthesize(text, args.out, provider=args.provider, cache=not args.no_cache, speed=args.speed, volume=args.volume, **options)
             ok = True
         print(json.dumps({"ok": ok, "command": args.command, "data": data}, ensure_ascii=False))
         return 0 if ok else 1
