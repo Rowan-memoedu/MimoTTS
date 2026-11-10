@@ -1,5 +1,8 @@
 # MiMo TTS
 
+协作开发、Agent 提交与合并规则见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+
 可复用的 Python API、命令行及软件 TTS 接入。正式迁移已获授权，当前运行状态见对照汇总页。
 
 ## 直接使用
